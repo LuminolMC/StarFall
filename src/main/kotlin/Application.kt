@@ -38,22 +38,13 @@ fun Application.module() {
             }
         }
     }
-    val jwtAudience = environment.config.tryGetString("jwt.audience")!!
-    val jwtDomain = environment.config.tryGetString("jwt.domain")!!
-    val jwtRealm = environment.config.tryGetString("jwt.realm")!!
-    val jwtSecret = environment.config.tryGetString("jwt.secret")!!
-    authentication {
-        jwt {
-            realm = jwtRealm
-            verifier(
-                JWT
-                    .require(Algorithm.HMAC256(jwtSecret))
-                    .withAudience(jwtAudience)
-                    .withIssuer(jwtDomain)
-                    .build()
-            )
-            validate { credential ->
-                if (credential.payload.audience.contains(jwtAudience)) JWTPrincipal(credential.payload) else null
+    val expectedToken = environment.config.tryGetString("auth.token")
+    install(Authentication) {
+        bearer("auth-bearer") {
+            authenticate { tokenCredential ->
+                if (tokenCredential.token == expectedToken) {
+                    UserIdPrincipal("StarFall")
+                } else { null }
             }
         }
     }

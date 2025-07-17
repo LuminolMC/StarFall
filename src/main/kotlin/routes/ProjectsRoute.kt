@@ -4,6 +4,7 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.auth.authenticate
 import io.ktor.server.plugins.origin
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -18,33 +19,51 @@ val commitsDatabaseService = CommitsDatabaseService(mongoDatabase)
 
 fun Application.initProjectsRoute() {
     routing {
-        get("projects/append_commits") {
-            // TODO Auth Checks
-            val branchName = call.parameters["branch_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        authenticate("auth-bearer") {
+            get("projects/append_commits") {
+                // TODO Auth Checks
+                val branchName = call.parameters["branch_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@get call.respond(HttpStatusCode.BadRequest)
 
-            val decodedCommits: List<CommitData>
+                val decodedCommits: List<CommitData>
 
-            try {
-                decodedCommits = JsonParser.parseString(commitDataJsonArray).asJsonArray.let {
-                    val objects = mutableListOf<CommitData>()
+                try {
+                    decodedCommits = JsonParser.parseString(commitDataJsonArray).asJsonArray.let {
+                        val objects = mutableListOf<CommitData>()
 
-                    for (obj in it) {
-                        objects.add(CommitData.fromJsonObject(obj.asJsonObject))
+                        for (obj in it) {
+                            objects.add(CommitData.fromJsonObject(obj.asJsonObject))
+                        }
+
+                        return@let objects
                     }
-
-                    return@let objects
+                }catch (e: JsonSyntaxException){
+                    log.error("Failed to parse commit data $commitDataJsonArray from user of Ip ${call.request.origin.remoteAddress}", e)
+                    return@get call.respond(HttpStatusCode.BadRequest)
                 }
-            }catch (e: JsonSyntaxException){
-                log.error("Failed to parse commit data $commitDataJsonArray from user of Ip ${call.request.origin.remoteAddress}", e)
-                return@get call.respond(HttpStatusCode.BadRequest)
+
+                for (commit in decodedCommits) {
+                    commitsDatabaseService.add(branchName, commit)
+                }
+
+                return@get call.respond(HttpStatusCode.OK)
             }
 
-            for (commit in decodedCommits) {
-                commitsDatabaseService.add(branchName, commit)
-            }
+            get("/projects/create") {
+                val arguments = call.parameters
+                val projectName = arguments["project_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
 
-            return@get call.respond(HttpStatusCode.OK)
+                log.info("User from Ip address: ${call.request.origin.remoteAddress} is creating project $projectName")
+
+                if (projectsDatabaseService.hasProject(projectName)) {
+                    return@get call.respond(HttpStatusCode.BadRequest)
+                }
+
+                val created = ProjectData(projectName, emptyList())
+                projectsDatabaseService.create(created)
+
+                call.respond(HttpStatusCode.OK, created)
+            }
         }
 
         get("/projects/get_commits") {
@@ -84,23 +103,6 @@ fun Application.initProjectsRoute() {
             }
 
             return@get call.respond(HttpStatusCode.OK, result)
-        }
-
-        // TODO Auth needed
-        get("/projects/create") {
-            val arguments = call.parameters
-            val projectName = arguments["project_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-
-            log.info("User from Ip address: ${call.request.origin.remoteAddress} is creating project $projectName")
-
-            if (projectsDatabaseService.hasProject(projectName)) {
-                return@get call.respond(HttpStatusCode.BadRequest)
-            }
-
-            val created = ProjectData(projectName, emptyList())
-            projectsDatabaseService.create(created)
-
-            call.respond(HttpStatusCode.OK, created)
         }
     }
 }
