@@ -20,7 +20,7 @@ val commitsDatabaseService = CommitsDatabaseService(mongoDatabase)
 fun Application.initProjectsRoute() {
     routing {
         authenticate("auth-bearer") {
-            get("projects/append_commits") {
+            post("projects/append_commits") {
                 // TODO Auth Checks
                 val branchName = call.parameters["branch_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@get call.respond(HttpStatusCode.BadRequest)
@@ -49,7 +49,7 @@ fun Application.initProjectsRoute() {
                 return@get call.respond(HttpStatusCode.OK)
             }
 
-            get("/projects/create") {
+            post("/projects/create") {
                 val arguments = call.parameters
                 val projectName = arguments["project_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
 
