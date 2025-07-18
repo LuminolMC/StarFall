@@ -15,14 +15,14 @@ import moe.luminolmc.data.ProjectsDatabaseService
 import moe.luminolmc.mongoDatabase
 
 val projectsDatabaseService = ProjectsDatabaseService(mongoDatabase)
-val commitsDatabaseService = CommitsDatabaseService(mongoDatabase)
+val commitsDatabaseService = CommitsDatabaseService(mongoDatabase, projectsDatabaseService)
 
 fun Application.initProjectsRoute() {
     routing {
         authenticate("auth-bearer") {
             post("projects/append_commits") {
                 // TODO Auth Checks
-                val branchName = call.parameters["branch_name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val projectName = call.parameters["project_name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@post call.respond(HttpStatusCode.BadRequest)
 
                 val decodedCommits: List<CommitData>
@@ -43,7 +43,7 @@ fun Application.initProjectsRoute() {
                 }
 
                 for (commit in decodedCommits) {
-                    commitsDatabaseService.add(branchName, commit)
+                    commitsDatabaseService.add(projectName, commit)
                 }
 
                 return@post call.respond(HttpStatusCode.OK)
@@ -70,18 +70,7 @@ fun Application.initProjectsRoute() {
             val targetProjectName = call.parameters["project_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val targetBranchName = call.parameters["branch"] ?: return@get call.respond(HttpStatusCode.BadRequest)
 
-            val targetProject = projectsDatabaseService.get(targetProjectName)
-            if (targetProject == null) {
-                return@get call.respond(HttpStatusCode.NotFound)
-            }
-
-            val names = targetProject.branches.map { branch -> branch.name}
-
-            if (!names.contains(targetBranchName)) {
-                return@get call.respond(HttpStatusCode.NotFound)
-            }
-
-            val commits = commitsDatabaseService.getCommitsOf(targetBranchName)
+            val commits = commitsDatabaseService.getCommitsOf(targetProjectName, targetBranchName)
             call.respond(HttpStatusCode.OK, commits)
         }
 

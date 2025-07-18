@@ -7,10 +7,11 @@ import com.mongodb.client.MongoCollection
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.bson.Document
-import org.bson.types.ObjectId
+import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 data class CommitData (
@@ -23,7 +24,7 @@ data class CommitData (
     @SerializedName("timestamp")
     val commitTimestamp: Long,
     @SerializedName("branch_name")
-    val branchName: String
+    val branchName: String,
 ): MongodbSerializableData {
     override fun toDocument(): Document = Document.parse(gson.toJson(this))
 
@@ -42,34 +43,51 @@ data class Commits (
 )
 
 class CommitsDatabaseService(
-    private val database: MongoDatabase
+    private val database: MongoDatabase,
+    private val projectsDatabaseService: ProjectsDatabaseService
 ) {
-    private val commits: MongoCollection<Document>
+    private val commitsOfEachProject: MutableMap<String, MongoCollection<Document>> = ConcurrentHashMap()
 
     init {
         this.database.createCollection("commits")
-        this.commits = database.getCollection("commits")
+
+        runBlocking {
+            val allProjects = projectsDatabaseService.getAllProjects()
+
+            for (projectInfo in allProjects) {
+                commitsOfEachProject.computeIfAbsent(projectInfo.name) {
+                    return@computeIfAbsent database.getCollection("commits_of_$it")
+                }
+            }
+        }
     }
 
-    suspend fun getCommitsOf(branch: String): Commits = withContext(Dispatchers.IO) {
-        val commitsList = commits.find(Filters.eq("branch_name", branch)).map { CommitData.fromDocument(it) }.toList()
+    suspend fun getCommitsOf(project: String, branch: String): Commits = withContext(Dispatchers.IO) {
+        val commitsList = commitsOfEachProject[project]?.find(Filters.eq("branch_name", branch))?.map { CommitData.fromDocument(it) }
+            ?.toList()
+
+        if (commitsList == null) {
+            return@withContext Commits(emptyList())
+        }
 
         return@withContext Commits(commitsList)
     }
 
-    suspend fun add(branch: String, commitData: CommitData) = withContext(Dispatchers.IO) {
+    suspend fun add(project: String, commitData: CommitData) = withContext(Dispatchers.IO) {
         val commitDoc = commitData.toDocument()
-        commits.insertOne(commitDoc)
+        val collection = commitsOfEachProject[project]
+
+        collection?.insertOne(commitDoc)
     }
 
-    suspend fun get(branch: String): Commits? = withContext(Dispatchers.IO) {
-        val found = commits.find(Filters.eq("branch_name", branch)).map { CommitData.fromDocument(it) }
-        val allCommitsList = found.toList()
+    suspend fun get(project: String, branch: String): Commits? = withContext(Dispatchers.IO) {
+        val found = commitsOfEachProject[project]?.find(Filters.eq("branch_name", branch))?.map { CommitData.fromDocument(it) }
+        val allCommitsList = found?.toList() ?: emptyList()
 
         return@withContext Commits(allCommitsList)
     }
 
-    suspend fun delete(branch: String): Document? = withContext(Dispatchers.IO) {
-        commits.findOneAndDelete(Filters.eq("branch_name", branch))
+    suspend fun delete(project: String, branch: String): Document? = withContext(Dispatchers.IO) {
+        commitsOfEachProject[project]?.findOneAndDelete(Filters.eq("branch_name", branch))
     }
 }
