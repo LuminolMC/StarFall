@@ -22,8 +22,8 @@ fun Application.initProjectsRoute() {
         authenticate("auth-bearer") {
             post("projects/append_commits") {
                 // TODO Auth Checks
-                val branchName = call.parameters["branch_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-                val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val branchName = call.parameters["branch_name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val commitDataJsonArray = call.parameters["commit_data_json_array"] ?: return@post call.respond(HttpStatusCode.BadRequest)
 
                 val decodedCommits: List<CommitData>
 
@@ -39,24 +39,24 @@ fun Application.initProjectsRoute() {
                     }
                 }catch (e: JsonSyntaxException){
                     log.error("Failed to parse commit data $commitDataJsonArray from user of Ip ${call.request.origin.remoteAddress}", e)
-                    return@get call.respond(HttpStatusCode.BadRequest)
+                    return@post call.respond(HttpStatusCode.BadRequest)
                 }
 
                 for (commit in decodedCommits) {
                     commitsDatabaseService.add(branchName, commit)
                 }
 
-                return@get call.respond(HttpStatusCode.OK)
+                return@post call.respond(HttpStatusCode.OK)
             }
 
             post("/projects/create") {
                 val arguments = call.parameters
-                val projectName = arguments["project_name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val projectName = arguments["project_name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
 
                 log.info("User from Ip address: ${call.request.origin.remoteAddress} is creating project $projectName")
 
                 if (projectsDatabaseService.hasProject(projectName)) {
-                    return@get call.respond(HttpStatusCode.BadRequest)
+                    return@post call.respond(HttpStatusCode.BadRequest)
                 }
 
                 val created = ProjectData(projectName, emptyList())
